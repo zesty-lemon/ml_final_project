@@ -2,11 +2,15 @@ import os, glob
 from typing import Dict, Tuple
 
 import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 from scipy.interpolate import interp1d
+from tqdm import tqdm
+
 
 # read csv into NDArray, skipping the first row
 def read_series(filepath) -> NDArray[np.float32]:
@@ -43,6 +47,29 @@ def read_and_resample_features(file_root: str, classes: Dict[str, int], target_l
     return X_features, y_labels
 
 
+# find and plot accuracy vs number of estimators
+# for random forest classifier
+def find_best_n_estimators(Xtrain:np.ndarray, Xtest: np.ndarray, ytrain: np.ndarray, ytest: np.ndarray):
+    n_estimator_val = []
+    rf_score = []
+
+    # pretty print loading bars with tqdm just for fun
+    for i in tqdm(range(10, 301), desc="Training Random Forests", unit="model"):
+        rf_classifier = RandomForestClassifier(n_estimators=i)
+        rf_classifier.fit(Xtrain, ytrain)
+        y_pred = rf_classifier.predict(Xtest)
+        score = rf_classifier.score(Xtest, ytest)
+        n_estimator_val.append(i)
+        rf_score.append(score)
+
+    plt.figure(figsize=(8, 4.5))
+    plt.plot(n_estimator_val, rf_score, linewidth=1)
+    plt.xlabel("Number of Estimator Values (integer)")
+    plt.ylabel("Accuracy")
+    plt.title("Random Forest Classifier Accuracy vs. Number of Estimators")
+    plt.grid(True, linestyle='--', alpha=0.3)
+    plt.show()
+
 #---- Run Model -----
 root = "data/gonzalez_2017/data/"
 classes = {"potholes": 1, "regular_road": 0}
@@ -60,3 +87,5 @@ clf.fit(Xtrain, ytrain)
 # evaluate model & print report
 ypred = clf.predict(Xtest)
 print(classification_report(ytest, ypred, target_names=["regular_road", "pothole"]))
+
+find_best_n_estimators(Xtrain, Xtest, ytrain, ytest)
