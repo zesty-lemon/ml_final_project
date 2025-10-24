@@ -6,8 +6,8 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.metrics import classification_report, roc_curve, auc, RocCurveDisplay
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 
@@ -36,7 +36,7 @@ def read_and_resample_features(file_root: str, classes: Dict[str, int], target_l
     y_labels = []
 
     for label, val in classes.items():
-        for file in glob.glob(os.path.join(root, label, "*.csv")):
+        for file in glob.glob(os.path.join(file_root, label, "*.csv")):
             x_raw_data = read_series(file)
             x_resampled = interpolate_signal(x_raw_data, target_len=target_len)
             X_features.append(x_resampled)
@@ -49,7 +49,7 @@ def read_and_resample_features(file_root: str, classes: Dict[str, int], target_l
 
 # find and plot accuracy vs number of estimators
 # for random forest classifier
-def find_best_n_estimators(Xtrain:np.ndarray, Xtest: np.ndarray, ytrain: np.ndarray, ytest: np.ndarray):
+def find_best_n_estimators_random_forest(Xtrain:np.ndarray, Xtest: np.ndarray, ytrain: np.ndarray, ytest: np.ndarray):
     n_estimator_val = []
     rf_score = []
 
@@ -71,29 +71,59 @@ def find_best_n_estimators(Xtrain:np.ndarray, Xtest: np.ndarray, ytrain: np.ndar
     plt.show()
 
 
-
 # train and test a random forest model with a simple test/training split
-def perform_test_train_randomforest(X_features: np.ndarray, y_labels: np.ndarray, num_estimators: int = 200, random_state: int = 42):
-    # train test split
-    Xtrain, Xtest, ytrain, ytest = train_test_split(X_features, y_labels, test_size=0.3, stratify=y_labels,
-                                                    random_state=random_state)
+def train_randomforest(X_features: np.ndarray, y_labels: np.ndarray, classes: Dict[str, int],
+                       num_estimators: int = 200, random_state: int = 42,
+                       find_n_estimators: bool = False, test_size = 0.3) -> RandomForestClassifier:
 
+    Xtrain, Xtest, ytrain, ytest = train_test_split(
+        X_features, y_labels, test_size=test_size, stratify=y_labels,
+        random_state=random_state
+    )
     # train model
     clf = RandomForestClassifier(n_estimators=num_estimators, random_state=random_state)
     clf.fit(Xtrain, ytrain)
+    ypred = clf.predict(Xtest)
 
     # evaluate model & print report
-    ypred = clf.predict(Xtest)
-    print(classification_report(ytest, ypred, target_names=["regular_road", "pothole"]))
+    y_score = clf.predict_proba(Xtest)[:, 1]
+    fpr, tpr, _ = roc_curve(ytest, y_score)
+    roc_auc = auc(fpr, tpr)
 
-    find_best_n_estimators(Xtrain, Xtest, ytrain, ytest)
+    print("----- Simple Test/Train Split Random Forest Classification Report -----")
+    print(classification_report(ytest, ypred, target_names=classes.keys()))
+    print(f"AUC: {roc_auc:.3f}")
 
+    plt.figure(figsize=(6, 6))
+    RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc, name="RandomForest").plot()
+    plt.plot([0, 1], [0, 1], linestyle="--", linewidth=1)
+    plt.title("ROC Curve (Hold-out Split)")
+    plt.grid(True, linestyle="--", alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    if find_n_estimators:
+        find_best_n_estimators_random_forest(Xtrain, Xtest, ytrain, ytest)
+
+    return clf
+
+# perform k_fold validation on random forest
+def perform_k_fold_randomforest(X_features: np.ndarray, y_labels: np.ndarray, n_estimators: int = 200, random_state: int = 42):
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+    rf = RandomForestClassifier(n_estimators=n_estimators, random_state=random_state)
+    scores = cross_val_score(rf, X_features, y_labels, cv=cv, scoring="accuracy")
+    print(f"Cross-validation accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
 
 #---- Run Model -----
 root = "data/gonzalez_2017/data/"
 classes = {"potholes": 1, "regular_road": 0}
-
+classes.keys()
 # read features in from file and resample them
 X_features, y_labels = read_and_resample_features(root, classes, 50)
 
-perform_test_train_randomforest(X_features, y_labels)
+# perform k-fold validation random forest
+perform_k_fold_randomforest(X_features, y_labels)
+
+# fit random forest model
+clf = train_randomforest(X_features, y_labels, classes)
+
