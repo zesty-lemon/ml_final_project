@@ -1,4 +1,5 @@
 import os, glob
+
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.ensemble import RandomForestClassifier
@@ -15,13 +16,22 @@ classes = {"potholes": 1, "regular_road": 0}
 X_features = []
 y_labels = []
 
+value_summary = []
 for label, val in classes.items():
+    min_len = 1000000000
+    max_len = 0
     for f in glob.glob(os.path.join(root, label, "*.csv")):
         x = read_series(f)
+        if len(x) > max_len:
+            max_len = len(x)
+        if len(x) < min_len:
+            min_len = len(x)
         feats = [x.mean(), x.std(), x.min(), x.max(), np.ptp(x), np.mean(np.abs(np.diff(x)))]
         X_features.append(feats)
         y_labels.append(val)
+    print(label,"|  min: "+str(min_len)+" max: "+str(max_len))
 
+print(value_summary)
 X_features, y_labels = np.array(X_features), np.array(y_labels)
 
 # train test split
