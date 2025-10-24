@@ -2,7 +2,6 @@ import os, glob
 from typing import Dict, Tuple
 
 import numpy as np
-import pandas as pd
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from sklearn.ensemble import RandomForestClassifier
@@ -108,6 +107,7 @@ def train_randomforest(X_features: np.ndarray, y_labels: np.ndarray, classes: Di
     return clf
 
 # perform k_fold validation on random forest
+# TODO:  pass in trained model to evaluate performance
 def perform_k_fold_randomforest(X_features: np.ndarray, y_labels: np.ndarray, n_estimators: int = 200, random_state: int = 42):
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
     rf = RandomForestClassifier(n_estimators=n_estimators, random_state=random_state)
