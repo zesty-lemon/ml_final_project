@@ -70,6 +70,25 @@ def find_best_n_estimators(Xtrain:np.ndarray, Xtest: np.ndarray, ytrain: np.ndar
     plt.grid(True, linestyle='--', alpha=0.3)
     plt.show()
 
+
+
+# train and test a random forest model with a simple test/training split
+def perform_test_train_randomforest(X_features: np.ndarray, y_labels: np.ndarray, num_estimators: int = 200, random_state: int = 42):
+    # train test split
+    Xtrain, Xtest, ytrain, ytest = train_test_split(X_features, y_labels, test_size=0.3, stratify=y_labels,
+                                                    random_state=random_state)
+
+    # train model
+    clf = RandomForestClassifier(n_estimators=num_estimators, random_state=random_state)
+    clf.fit(Xtrain, ytrain)
+
+    # evaluate model & print report
+    ypred = clf.predict(Xtest)
+    print(classification_report(ytest, ypred, target_names=["regular_road", "pothole"]))
+
+    find_best_n_estimators(Xtrain, Xtest, ytrain, ytest)
+
+
 #---- Run Model -----
 root = "data/gonzalez_2017/data/"
 classes = {"potholes": 1, "regular_road": 0}
@@ -77,15 +96,4 @@ classes = {"potholes": 1, "regular_road": 0}
 # read features in from file and resample them
 X_features, y_labels = read_and_resample_features(root, classes, 50)
 
-# train test split
-Xtrain, Xtest, ytrain, ytest = train_test_split(X_features, y_labels, test_size=0.3, stratify=y_labels, random_state=42)
-
-# train model
-clf = RandomForestClassifier(n_estimators=200, random_state=42)
-clf.fit(Xtrain, ytrain)
-
-# evaluate model & print report
-ypred = clf.predict(Xtest)
-print(classification_report(ytest, ypred, target_names=["regular_road", "pothole"]))
-
-find_best_n_estimators(Xtrain, Xtest, ytrain, ytest)
+perform_test_train_randomforest(X_features, y_labels)
