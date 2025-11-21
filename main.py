@@ -31,9 +31,9 @@ def interpolate_signal(x_raw_data, target_len=50):
 # split into features and labels
 # resize the features to be consistent length
 def read_and_resample_features(file_root: str, classes: Dict[str, int], target_len:int = 50) -> Tuple[np.ndarray, np.ndarray]:
-    X_features = []
-    y_labels = []
-
+    X_features = [] # joined array of all features for all desired classes together
+    y_labels = [] # labels of features for all desired classes together
+    # for each class, read its values into X_features and its labels into y_labels
     for label, val in classes.items():
         for file in glob.glob(os.path.join(file_root, label, "*.csv")):
             x_raw_data = read_series(file)
@@ -93,7 +93,6 @@ def train_randomforest(X_features: np.ndarray, y_labels: np.ndarray, classes: Di
     print(classification_report(ytest, ypred, target_names=classes.keys()))
     print(f"AUC: {roc_auc:.3f}")
 
-    plt.figure(figsize=(6, 6))
     RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc, name="RandomForest").plot()
     plt.plot([0, 1], [0, 1], linestyle="--", linewidth=1)
     plt.title("ROC Curve (Hold-out Split)")
@@ -127,3 +126,10 @@ perform_k_fold_randomforest(X_features, y_labels)
 # fit random forest model
 clf = train_randomforest(X_features, y_labels, classes)
 
+for X_index in range(0,len(X_features)):
+    if y_labels[X_index] == 0:
+        plt.plot(range(0, 50), X_features[X_index], 'b')
+    else:
+        plt.plot(range(0, 50), X_features[X_index], 'r')
+
+plt.show()
