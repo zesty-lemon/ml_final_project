@@ -1,9 +1,11 @@
 import os, glob
 from typing import Dict, Tuple
 import numpy as np
+import sklearn.ensemble
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from scipy.stats import randint, uniform
+import joblib
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, RandomizedSearchCV
@@ -141,7 +143,8 @@ def perform_k_fold_randomforest(X_features: np.ndarray, y_labels: np.ndarray, n_
     print(f"Cross-validation accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
 
 
-def run_random_param_search(X_train: np.ndarray, y_train: np.ndarray):
+
+def run_random_param_search(X_train: np.ndarray, y_train: np.ndarray) -> sklearn.ensemble.RandomForestClassifier:
     print("----- Beginning Randomized Search CV -----")
     # define the estimator
     rf_classifier = RandomForestClassifier(random_state=42)
@@ -173,6 +176,22 @@ def run_random_param_search(X_train: np.ndarray, y_train: np.ndarray):
     print(f"Best score: {random_search.best_score_}")
     print("----- Completed Randomized Search CV -----")
 
+    return random_search.best_estimator_
+
+
+
+def perform_random_param_search(X_features: np.ndarray, y_labels: np.ndarray, save_to_file: bool = False):
+    Xtrain, Xtest, ytrain, ytest = train_test_split(
+        X_features, y_labels, test_size=0.3, stratify=y_labels,
+        random_state=42
+    )
+
+    clf = run_random_param_search(Xtrain, ytrain)
+
+    if save_to_file:
+        joblib.dump(clf, 'trained_models/random_forest_model.joblib')
+
+
 
 #---- Run Model -----
 root = "data/gonzalez_2017/data/"
@@ -189,12 +208,7 @@ perform_k_fold_randomforest(X_features, y_labels)
 clf = RandomForestClassifier(n_estimators=200, random_state=42)
 clf = train_randomforest(clf, X_features, y_labels, classes)
 
-Xtrain, Xtest, ytrain, ytest = train_test_split(
-    X_features, y_labels, test_size=0.3, stratify=y_labels,
-    random_state=42
-)
-
-run_random_param_search(Xtrain, ytrain)
+perform_random_param_search(X_features, y_labels, save_to_file = True)
 
 # for X_index in range(0,len(X_features)):
 #     if y_labels[X_index] == 0:
