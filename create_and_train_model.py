@@ -155,10 +155,9 @@ def perform_k_fold_randomforest(X_features: np.ndarray,
 # run a random hyperparameter search for random forest
 # return the model with the best accuracy AND save a report
 # set use_dummy_model_configs to true when debugging, it will run very simplified random search (faster)
-def run_random_param_search(X_train: np.ndarray,
-                            y_train: np.ndarray,
-                            directory: str,
-                            use_dummy_model_configs: bool = False) -> RandomForestClassifier:
+def perform_random_param_search(X_train: np.ndarray,
+                                y_train: np.ndarray,
+                                directory: str) -> RandomForestClassifier:
     # define the estimator
     rf_classifier = RandomForestClassifier(random_state=42,
                                            class_weight="balanced")
@@ -183,42 +182,9 @@ def run_random_param_search(X_train: np.ndarray,
         scoring='accuracy',
         random_state=36,
         n_jobs=-1,
-        verbose=2,
+        verbose=2, # debug flag
         return_train_score = True
     )
-
-    # The random search takes a very singnificant amount of time
-    # these values will let it run in ~1-2 mins instead of ~2 hours
-    # useful for debugging
-    if use_dummy_model_configs:
-        rf_classifier = RandomForestClassifier(
-            random_state=42,
-            class_weight="balanced",
-            n_estimators=10,
-            max_depth=5
-        )
-
-        # Smaller search space
-        param_distributions = {
-            "n_estimators": randint(5, 15),
-            "max_depth": [None, 5, 10],
-            "min_samples_split": randint(2, 5),
-            "min_samples_leaf": randint(1, 3),
-            "max_features": ['sqrt'],
-            "bootstrap": [True],
-            "criterion": ["gini"],
-        }
-
-        random_search = RandomizedSearchCV(
-            estimator=rf_classifier,
-            param_distributions=param_distributions,
-            n_iter=2,
-            cv=2,
-            scoring='accuracy',
-            random_state=36,
-            n_jobs=1,
-            verbose=1,
-            return_train_score = True)
 
     # Run the search
     random_search.fit(X_train, y_train)
@@ -230,18 +196,24 @@ def run_random_param_search(X_train: np.ndarray,
     # ---- Generate & Save Report to Directory ----
     os.makedirs(directory, exist_ok=True)
     report_path = os.path.join(directory, "random_forest_random_search_report.txt")
-    # Get Results from Random Forest Searc
+
+    # Get Results from Random Forest Search
     cv_results = random_search.cv_results_
+
     # Scores on Test data
     mean_test_scores = cv_results["mean_test_score"]
     std_test_scores = cv_results["std_test_score"]
+
     # Scores on Train data
     mean_train_scores = cv_results["mean_train_score"]
     std_train_scores = cv_results["std_train_score"]
+
     # All Model Params
     params_list = cv_results["params"]
+
     # Sort configurations from best to worst
     sorted_indices = np.argsort(mean_test_scores)[::-1]
+
     # Generate & Save Final Report
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("Random Forest RandomizedSearchCV Report\n")
@@ -270,6 +242,45 @@ def run_random_param_search(X_train: np.ndarray,
     print(f"Saved random search report to: {report_path}")
     return random_search.best_estimator_
 
+
+# run random search and save best result to file
+def orchestrate_random_param_search(X_features: np.ndarray,
+                                y_labels: np.ndarray,
+                                directory: str,
+                                classes: Dict[int, str]) -> RandomForestClassifier:
+    print("----- BEGIN Randomized Search CV -----")
+
+    # Split into Test/Train sets
+    Xtrain, Xtest, ytrain, ytest = train_test_split(
+        X_features,
+        y_labels,
+        test_size=0.3,
+        stratify=y_labels,  # classes are unbalanced this keeps proportions (prevents a split from having 0 of a class)
+        random_state=42,
+    )
+
+    # Make the bert_embeddings directory to store model & report
+    output_dir = directory + "/random_search_model/"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Run random search for best configuration of parameters
+    clf = perform_random_param_search(Xtrain, ytrain, output_dir)
+
+    # Save best model to file
+    joblib.dump(clf, f'{output_dir}/random_forest_model.joblib')
+
+    # Generate Report about our best model found with Random Search
+    os.makedirs(output_dir, exist_ok=True)
+    generate_model_analysis_report(Xtrain,
+                                   Xtest,
+                                   ytrain,
+                                   ytest,
+                                   clf,
+                                   output_dir,
+                                   classes)
+
+    print("----- END Randomized Search CV -----")
+    return clf
 
 
 # Generate analysis and report and save to file
@@ -399,6 +410,7 @@ def create_new_trained_models(run_k_fold_validation: bool,
                               run_new_simple_rf_classifier: bool,
                               run_random_param_search: bool,
                               use_dummy_parameters: bool = False):
+
     # Get the parent directory to persist trained models and reports
     directory_to_save_models = (
             c.RANDOM_FOREST_TRAINED_MODEL_DIR_PREFIX + "sandbox/" + generate_run_dir_name()
@@ -413,7 +425,7 @@ def create_new_trained_models(run_k_fold_validation: bool,
         perform_k_fold_randomforest(X_features,
                                     y_labels,
                                     report_directory=directory_to_save_models)
-    #
+
     # Fit Random Forest Model
     if run_new_simple_rf_classifier:
         clf = RandomForestClassifier(n_estimators=200, random_state=42)
@@ -422,32 +434,15 @@ def create_new_trained_models(run_k_fold_validation: bool,
                                  y_labels,
                                  classes=c.CLASSES,
                                  report_directory=directory_to_save_models)
-    #
-    # # Perform Random Search
-    # if run_random_param_search:
-    #     perform_random_param_search(X_features,
-    #                                 y_labels,
-    #                                 model_selection = model_selection,
-    #                                 directory=directory_to_save_models,
-    #                                 classes=c.CLASSES,
-    #                                 use_dummy_model_configs=use_dummy_parameters)
 
-#---- Run Model -----
-# root = "data/gonzalez_2017/data/"
-# classes = {"metal_bumps": 4,"asphalt_bumps": 3, "potholes": 2, "regular_road": 1, "worn_out_road": 0}
-# classes.keys()
-# read features in from file and resample them
-# X_features, y_labels = read_and_resample_features(root, classes, 50)
+    # Perform Random Search
+    if run_random_param_search:
+        orchestrate_random_param_search(X_features,
+                                        y_labels,
+                                        directory=directory_to_save_models,
+                                        classes=c.CLASSES)
 
-# perform k-fold validation random forest
-# perform_k_fold_randomforest(X_features, y_labels)
 
-# # fit random forest model
-# clf = RandomForestClassifier(n_estimators=200, random_state=42)
-# clf = train_randomforest(clf, X_features, y_labels, classes)
-
-# run_random_param_search(X_features, y_labels, save_to_file = True)
-#
 # for X_index in range(0,len(X_features)):
 #     if y_labels[X_index] == 0:
 #         plt.plot(range(0, 50), X_features[X_index], 'b')
@@ -463,7 +458,3 @@ if __name__ == "__main__":
     create_new_trained_models(run_k_fold_validation=True,
                               run_new_simple_rf_classifier=True,
                               run_random_param_search=True)
-
-#Todo:  Swap the class labels again....
-
-# remove dummy model configs
