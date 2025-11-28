@@ -3,18 +3,16 @@ from datetime import datetime
 import constants as c
 from typing import Dict, Tuple
 import numpy as np
-import sklearn.ensemble
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
-from scipy.stats import randint, uniform
+from scipy.stats import randint
 import joblib
-from sklearn.preprocessing import LabelBinarizer, label_binarize
+from sklearn.preprocessing import label_binarize
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, RandomizedSearchCV
-from sklearn.metrics import classification_report, roc_curve, auc, RocCurveDisplay, accuracy_score, confusion_matrix, \
-    ConfusionMatrixDisplay
+from sklearn.metrics import classification_report, roc_curve, auc
+from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
 from scipy.interpolate import interp1d
-from tqdm import tqdm
 
 # Get unique name for bert_embeddings directory
 def generate_run_dir_name() -> str:
@@ -34,12 +32,12 @@ def pretty_label(s: str) -> str:
     return s.replace("_", " ").title()
 
 
-# read csv into NDArray, skipping the first row
+# Read csv into NDArray, skipping the first row
 def read_series(filepath) -> NDArray[np.float32]:
     return np.loadtxt(filepath, skiprows=1, delimiter=',').astype(np.float32)
 
 
-# resample the raw data into a fixed length using interpolation
+# Resample the raw data into a fixed length using interpolation
 def interpolate_signal(x_raw_data, target_len=50):
     n = len(x_raw_data)
     if n == target_len:
@@ -50,9 +48,9 @@ def interpolate_signal(x_raw_data, target_len=50):
     return f(new_idx)
 
 
-# read features in from file
-# split into features and labels
-# resize the features to be consistent length
+# Read features in from file
+# Split into features and labels
+# Resize the features to be consistent length
 def read_and_resample_features(file_root: str,
                                classes: Dict[int, str],
                                target_len: int = 50) -> Tuple[np.ndarray, np.ndarray]:
@@ -152,17 +150,17 @@ def perform_k_fold_randomforest(X_features: np.ndarray,
 
 
 
-# run a random hyperparameter search for random forest
+# Run a random hyperparameter search for random forest
 # return the model with the best accuracy AND save a report
 # set use_dummy_model_configs to true when debugging, it will run very simplified random search (faster)
 def perform_random_param_search(X_train: np.ndarray,
                                 y_train: np.ndarray,
                                 directory: str) -> RandomForestClassifier:
-    # define the estimator
+    # Define the estimator
     rf_classifier = RandomForestClassifier(random_state=42,
                                            class_weight="balanced")
 
-    # define the parameter distributions
+    # Define the parameter distributions
     param_distributions = {
         "n_estimators": randint(100, 400),
         "max_depth": [None] + list(range(10, 61, 10)),  # none = unlimited
@@ -173,7 +171,7 @@ def perform_random_param_search(X_train: np.ndarray,
         "criterion": ["gini", "entropy", "log_loss"],
     }
 
-    # create the RandomizedSearchCV object
+    # Create the RandomizedSearchCV object
     random_search = RandomizedSearchCV(
         estimator=rf_classifier,
         param_distributions=param_distributions,
@@ -408,8 +406,7 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
 # Create & Save various Random Forest Models
 def create_new_trained_models(run_k_fold_validation: bool,
                               run_new_simple_rf_classifier: bool,
-                              run_random_param_search: bool,
-                              use_dummy_parameters: bool = False):
+                              run_random_param_search: bool):
 
     # Get the parent directory to persist trained models and reports
     directory_to_save_models = (
@@ -442,17 +439,6 @@ def create_new_trained_models(run_k_fold_validation: bool,
                                         directory=directory_to_save_models,
                                         classes=c.CLASSES)
 
-
-# for X_index in range(0,len(X_features)):
-#     if y_labels[X_index] == 0:
-#         plt.plot(range(0, 50), X_features[X_index], 'b')
-#     if y_labels[X_index] == 1:
-#         plt.plot(range(0, 50), X_features[X_index], 'r')
-#     if y_labels[X_index] == 2:
-#         plt.plot(range(0, 50), X_features[X_index], 'g')
-#     if y_labels[X_index] == 3:
-#         plt.plot(range(0, 50), X_features[X_index], 'm')
-# plt.show()
 
 if __name__ == "__main__":
     create_new_trained_models(run_k_fold_validation=True,
