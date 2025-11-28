@@ -73,6 +73,8 @@ def find_best_n_estimators_random_forest(Xtrain:np.ndarray, Xtest: np.ndarray, y
     plt.show()
 
 
+# run classification report to assess classifier performance
+# Also compute AUC and graph ROC
 def assess_clf_performance(clf: RandomForestClassifier, Xtest: np.ndarray,
                            ytest: np.ndarray, classes: Dict[str, int]):
     ypred = clf.predict(Xtest)
@@ -103,8 +105,8 @@ def assess_clf_performance(clf: RandomForestClassifier, Xtest: np.ndarray,
     fpr, tpr, thresholds = roc_curve(ytest_binary, y_score)
     roc_auc = auc(fpr, tpr)
 
+    # plot ROC Curve
     print(f"Pothole-vs-rest AUC: {roc_auc:.3f}")
-
     RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc, name="RandomForest (pothole vs rest)").plot()
     plt.plot([0, 1], [0, 1], linestyle="--", linewidth=1)
     plt.title("ROC Curve: Potholes vs Rest")
@@ -135,6 +137,7 @@ def train_randomforest(clf: RandomForestClassifier, X_features: np.ndarray, y_la
 
     return clf
 
+
 # perform k_fold validation on random forest
 def perform_k_fold_randomforest(X_features: np.ndarray, y_labels: np.ndarray, n_estimators: int = 200, random_state: int = 42):
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
@@ -143,7 +146,8 @@ def perform_k_fold_randomforest(X_features: np.ndarray, y_labels: np.ndarray, n_
     print(f"Cross-validation accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
 
 
-
+# run a random hyperparameter search for random forest
+# return the model with the best accuracy
 def run_random_param_search(X_train: np.ndarray, y_train: np.ndarray) -> sklearn.ensemble.RandomForestClassifier:
     print("----- Beginning Randomized Search CV -----")
     # define the estimator
@@ -179,7 +183,7 @@ def run_random_param_search(X_train: np.ndarray, y_train: np.ndarray) -> sklearn
     return random_search.best_estimator_
 
 
-
+# run random search and save best result to file
 def perform_random_param_search(X_features: np.ndarray, y_labels: np.ndarray, save_to_file: bool = False):
     Xtrain, Xtest, ytrain, ytest = train_test_split(
         X_features, y_labels, test_size=0.3, stratify=y_labels,
@@ -204,19 +208,18 @@ X_features, y_labels = read_and_resample_features(root, classes, 50)
 perform_k_fold_randomforest(X_features, y_labels)
 
 # fit random forest model
-
 clf = RandomForestClassifier(n_estimators=200, random_state=42)
 clf = train_randomforest(clf, X_features, y_labels, classes)
 
 perform_random_param_search(X_features, y_labels, save_to_file = True)
 
-# for X_index in range(0,len(X_features)):
-#     if y_labels[X_index] == 0:
-#         plt.plot(range(0, 50), X_features[X_index], 'b')
-#     if y_labels[X_index] == 1:
-#         plt.plot(range(0, 50), X_features[X_index], 'r')
-#     if y_labels[X_index] == 2:
-#         plt.plot(range(0, 50), X_features[X_index], 'g')
-#     if y_labels[X_index] == 3:
-#         plt.plot(range(0, 50), X_features[X_index], 'm')
-# plt.show()
+for X_index in range(0,len(X_features)):
+    if y_labels[X_index] == 0:
+        plt.plot(range(0, 50), X_features[X_index], 'b')
+    if y_labels[X_index] == 1:
+        plt.plot(range(0, 50), X_features[X_index], 'r')
+    if y_labels[X_index] == 2:
+        plt.plot(range(0, 50), X_features[X_index], 'g')
+    if y_labels[X_index] == 3:
+        plt.plot(range(0, 50), X_features[X_index], 'm')
+plt.show()
