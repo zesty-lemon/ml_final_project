@@ -200,3 +200,7 @@ log/
 
 # Coverage reports
 coverage/
+
+# trained models
+
+trained_models/random_forest/sandbox/

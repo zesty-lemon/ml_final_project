@@ -1,4 +1,6 @@
 import os, glob
+from datetime import datetime
+import constants as c
 from typing import Dict, Tuple
 import numpy as np
 import sklearn.ensemble
@@ -6,12 +8,30 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from scipy.stats import randint, uniform
 import joblib
-from sklearn.preprocessing import LabelBinarizer
+from sklearn.preprocessing import LabelBinarizer, label_binarize
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, RandomizedSearchCV
-from sklearn.metrics import classification_report, roc_curve, auc, RocCurveDisplay
+from sklearn.metrics import classification_report, roc_curve, auc, RocCurveDisplay, accuracy_score, confusion_matrix, \
+    ConfusionMatrixDisplay
 from scipy.interpolate import interp1d
 from tqdm import tqdm
+
+# Get unique name for bert_embeddings directory
+def generate_run_dir_name() -> str:
+    now = datetime.now()
+
+    day = now.strftime("%d")
+    month = now.strftime("%m")
+    hour = now.strftime("%H")
+    minute = now.strftime("%M")
+    second = now.strftime("%S")
+
+    return f"Training_{day}_{month}_{hour}_{minute}_{second}"
+
+
+# Helper method to lowercase labels and remove underscores
+def pretty_label(s: str) -> str:
+    return s.replace("_", " ").title()
 
 
 # read csv into NDArray, skipping the first row
@@ -33,193 +53,417 @@ def interpolate_signal(x_raw_data, target_len=50):
 # read features in from file
 # split into features and labels
 # resize the features to be consistent length
-def read_and_resample_features(file_root: str, classes: Dict[str, int], target_len:int = 50) -> Tuple[np.ndarray, np.ndarray]:
-    X_features = [] # joined array of all features for all desired classes together
-    y_labels = [] # labels of features for all desired classes together
-    # for each class, read its values into X_features and its labels into y_labels
-    for label, val in classes.items():
-        for file in glob.glob(os.path.join(file_root, label, "*.csv")):
-            x_raw_data = read_series(file)
+def read_and_resample_features(file_root: str,
+                               classes: Dict[int, str],
+                               target_len: int = 50) -> Tuple[np.ndarray, np.ndarray]:
+
+    X_features = []  # list of all feature arrays
+    y_labels = [] # list of corresponding labels
+
+    for class_id, class_name in classes.items():
+        class_folder = class_name.lower()
+        pattern = os.path.join(file_root, class_folder, "*.csv")
+
+        for file_path in glob.glob(pattern):
+            x_raw_data = read_series(file_path)
             x_resampled = interpolate_signal(x_raw_data, target_len=target_len)
+
             X_features.append(x_resampled)
-            y_labels.append(val)
+            y_labels.append(class_id)
 
     X_features = np.array(X_features)
     y_labels = np.array(y_labels)
+
     return X_features, y_labels
 
 
-# find and plot accuracy vs number of estimators
-# for random forest classifier
-def find_best_n_estimators_random_forest(Xtrain:np.ndarray, Xtest: np.ndarray, ytrain: np.ndarray, ytest: np.ndarray):
-    n_estimator_val = []
-    rf_score = []
+# Train and test a random forest model with a simple test/training split
+def train_randomforest(clf: RandomForestClassifier,
+                       X_features: np.ndarray,
+                       y_labels: np.ndarray,
+                       classes: Dict[int, str],
+                       report_directory: str,
+                       random_state: int = 42,
+                       test_size=0.3) -> RandomForestClassifier:
 
-    # pretty print loading bars with tqdm just for fun
-    for i in tqdm(range(10, 301), desc="Training Random Forests", unit="model"):
-        rf_classifier = RandomForestClassifier(n_estimators=i)
-        rf_classifier.fit(Xtrain, ytrain)
-        y_pred = rf_classifier.predict(Xtest)
-        score = rf_classifier.score(Xtest, ytest)
-        n_estimator_val.append(i)
-        rf_score.append(score)
+    # Split into Test/Training
+    Xtrain, Xtest, ytrain, ytest = train_test_split(X_features,
+                                                    y_labels,
+                                                    test_size=test_size,
+                                                    stratify=y_labels,
+                                                    random_state=random_state)
 
-    plt.figure(figsize=(8, 4.5))
-    plt.plot(n_estimator_val, rf_score, linewidth=1)
-    plt.xlabel("Number of Estimator Values (integer)")
-    plt.ylabel("Accuracy")
-    plt.title("Random Forest Classifier Accuracy vs. Number of Estimators")
-    plt.grid(True, linestyle='--', alpha=0.3)
-    plt.show()
-
-
-# run classification report to assess classifier performance
-# Also compute AUC and graph ROC
-def assess_clf_performance(clf: RandomForestClassifier, Xtest: np.ndarray,
-                           ytest: np.ndarray, classes: Dict[str, int]):
-    ypred = clf.predict(Xtest)
-    proba = clf.predict_proba(Xtest) # order is same as class_labels
-    class_labels = clf.classes_ # [0 1 2 3 4]
-
-    print("----- Simple Test/Train Split Random Forest Classification Report -----")
-    label_to_name = {v: k for k, v in classes.items()}
-    ordered_labels = sorted(label_to_name.keys())  # [0,1,2,3,4]
-    target_names = [label_to_name[l] for l in ordered_labels]
-
-    print(classification_report(
-        ytest,
-        ypred,
-        labels=ordered_labels,
-        target_names=target_names
-    ))
-
-    # which numeric label is "potholes"?
-    pothole_label = classes["potholes"]  # should be whatever it is originally set to
-    # find which column in `proba` corresponds to that label
-    pothole_col_idx = np.where(class_labels == pothole_label)[0][0]
-    # binary ground truth: pothole vs rest
-    ytest_binary = (ytest == pothole_label).astype(int)
-    # use the corresponding probability as the score
-    y_score = proba[:, pothole_col_idx]
-    # compute ROC and AUC
-    fpr, tpr, thresholds = roc_curve(ytest_binary, y_score)
-    roc_auc = auc(fpr, tpr)
-
-    # plot ROC Curve
-    print(f"Pothole-vs-rest AUC: {roc_auc:.3f}")
-    RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc, name="RandomForest (pothole vs rest)").plot()
-    plt.plot([0, 1], [0, 1], linestyle="--", linewidth=1)
-    plt.title("ROC Curve: Potholes vs Rest")
-    plt.grid(True, linestyle="--", alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
-# train and test a random forest model with a simple test/training split
-def train_randomforest(clf: RandomForestClassifier, X_features: np.ndarray, y_labels: np.ndarray,
-                       classes: Dict[str, int], random_state: int = 42,
-                       find_n_estimators: bool = False, test_size=0.3,
-                       print_perf_metrics: bool = True) -> RandomForestClassifier:
-
-    Xtrain, Xtest, ytrain, ytest = train_test_split(
-        X_features, y_labels, test_size=test_size, stratify=y_labels,
-        random_state=random_state
-    )
-
-    # train model
+    # Train model
     clf.fit(Xtrain, ytrain)
 
-    if print_perf_metrics:
-        assess_clf_performance(clf, Xtest, ytest, classes)
-
-    if find_n_estimators:
-        find_best_n_estimators_random_forest(Xtrain, Xtest, ytrain, ytest)
+    # Assess Performance and Save Report to file
+    full_output_dir = os.path.join(report_directory, "manually_instantiated_model")
+    os.makedirs(full_output_dir, exist_ok=True)
+    generate_model_analysis_report(Xtrain,
+                                   Xtest,
+                                   ytrain,
+                                   ytest,
+                                   clf,
+                                   full_output_dir,
+                                   classes)
 
     return clf
 
 
-# perform k_fold validation on random forest
-def perform_k_fold_randomforest(X_features: np.ndarray, y_labels: np.ndarray, n_estimators: int = 200, random_state: int = 42):
+# Perform K-Fold validation and save report
+def perform_k_fold_randomforest(X_features: np.ndarray,
+                                y_labels: np.ndarray,
+                                report_directory: str,
+                                n_estimators: int = 200,
+                                random_state: int = 42):
+
+    print(f"---- BEGIN Cross Validation (Random Forest) ----")
+    # Run Cross Validation and get scores
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
     rf = RandomForestClassifier(n_estimators=n_estimators, random_state=random_state)
     scores = cross_val_score(rf, X_features, y_labels, cv=cv, scoring="accuracy")
-    print(f"Cross-validation accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
+
+    # Compute mean & STDEV
+    mean_score = scores.mean()
+    std_score = scores.std()
+
+    # Generate & Save Report
+    kfold_dir = os.path.join(report_directory, "k_fold_validation")
+    os.makedirs(kfold_dir, exist_ok=True)
+    report_path = os.path.join(kfold_dir, "random_forest_kfold_report.txt")
+
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("Random Forest K-Fold Cross-Validation Report\n")
+        f.write("===========================================\n\n")
+        f.write(f"n_estimators: {n_estimators}\n")
+        f.write(f"random_state: {random_state}\n")
+        f.write(f"n_splits: {cv.get_n_splits()}\n\n")
+
+        f.write("Fold accuracies:\n")
+        for i, s in enumerate(scores, start=1):
+            f.write(f"  Fold {i}: {s:.4f}\n")
+
+        f.write("\n")
+        f.write(f"Mean accuracy: {mean_score:.4f}\n")
+        f.write(f"Std accuracy: {std_score:.4f}\n")
+
+    print(f"Saved k-fold report to: {report_path}")
+    print(f"---- END Cross Validation (Random Forest) ----")
+
 
 
 # run a random hyperparameter search for random forest
-# return the model with the best accuracy
-def run_random_param_search(X_train: np.ndarray, y_train: np.ndarray) -> sklearn.ensemble.RandomForestClassifier:
-    print("----- Beginning Randomized Search CV -----")
+# return the model with the best accuracy AND save a report
+# set use_dummy_model_configs to true when debugging, it will run very simplified random search (faster)
+def run_random_param_search(X_train: np.ndarray,
+                            y_train: np.ndarray,
+                            directory: str,
+                            use_dummy_model_configs: bool = False) -> RandomForestClassifier:
     # define the estimator
-    rf_classifier = RandomForestClassifier(random_state=42)
+    rf_classifier = RandomForestClassifier(random_state=42,
+                                           class_weight="balanced")
 
     # define the parameter distributions
     param_distributions = {
-        'n_estimators': randint(low=50, high=1000),
-        'max_depth': randint(low=10, high=100),
-        'min_samples_split': randint(low=2, high=10),
-        'max_features': ['sqrt', 'log2', None],
-        'criterion': ['gini', 'entropy']
+        "n_estimators": randint(100, 400),
+        "max_depth": [None] + list(range(10, 61, 10)),  # none = unlimited
+        "min_samples_split": randint(2, 20),
+        "min_samples_leaf": randint(1, 10),
+        "max_features": ['sqrt', 'log2', None],
+        "bootstrap": [True, False],
+        "criterion": ["gini", "entropy", "log_loss"],
     }
 
     # create the RandomizedSearchCV object
     random_search = RandomizedSearchCV(
         estimator=rf_classifier,
         param_distributions=param_distributions,
-        n_iter=200,  # number of parameter settings that are sampled
-        cv=5,  # number of cross-validation folds
+        n_iter=40,
+        cv=5,
         scoring='accuracy',
         random_state=36,
-        n_jobs=-1  # force to use available CPU cores
+        n_jobs=-1,
+        verbose=2,
+        return_train_score = True
     )
 
+    # The random search takes a very singnificant amount of time
+    # these values will let it run in ~1-2 mins instead of ~2 hours
+    # useful for debugging
+    if use_dummy_model_configs:
+        rf_classifier = RandomForestClassifier(
+            random_state=42,
+            class_weight="balanced",
+            n_estimators=10,
+            max_depth=5
+        )
+
+        # Smaller search space
+        param_distributions = {
+            "n_estimators": randint(5, 15),
+            "max_depth": [None, 5, 10],
+            "min_samples_split": randint(2, 5),
+            "min_samples_leaf": randint(1, 3),
+            "max_features": ['sqrt'],
+            "bootstrap": [True],
+            "criterion": ["gini"],
+        }
+
+        random_search = RandomizedSearchCV(
+            estimator=rf_classifier,
+            param_distributions=param_distributions,
+            n_iter=2,
+            cv=2,
+            scoring='accuracy',
+            random_state=36,
+            n_jobs=1,
+            verbose=1,
+            return_train_score = True)
+
+    # Run the search
     random_search.fit(X_train, y_train)
 
     # Access the best parameters and best score
-    print(f"Best parameters: {random_search.best_params_}")
-    print(f"Best score: {random_search.best_score_}")
-    print("----- Completed Randomized Search CV -----")
+    best_params = random_search.best_params_
+    best_score = random_search.best_score_
 
+    # ---- Generate & Save Report to Directory ----
+    os.makedirs(directory, exist_ok=True)
+    report_path = os.path.join(directory, "random_forest_random_search_report.txt")
+    # Get Results from Random Forest Searc
+    cv_results = random_search.cv_results_
+    # Scores on Test data
+    mean_test_scores = cv_results["mean_test_score"]
+    std_test_scores = cv_results["std_test_score"]
+    # Scores on Train data
+    mean_train_scores = cv_results["mean_train_score"]
+    std_train_scores = cv_results["std_train_score"]
+    # All Model Params
+    params_list = cv_results["params"]
+    # Sort configurations from best to worst
+    sorted_indices = np.argsort(mean_test_scores)[::-1]
+    # Generate & Save Final Report
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("Random Forest RandomizedSearchCV Report\n")
+        f.write("======================================\n\n")
+
+        f.write("Best configuration\n")
+        f.write("------------------\n")
+        for k, v in best_params.items():
+            f.write(f"{k}: {v}\n")
+        f.write(f"\nBest mean CV accuracy: {best_score:.4f}\n\n")
+
+        f.write("Search space\n")
+        f.write("-----------\n")
+        f.write(str(param_distributions) + "\n\n")
+
+        f.write("All tried configurations (sorted by mean accuracy)\n")
+        f.write("-------------------------------------------------\n")
+        for rank, idx in enumerate(sorted_indices, start=1):
+            f.write(f"Rank {rank}\n")
+            f.write(f"  mean_train_accuracy: {mean_train_scores[idx]:.4f}\n")
+            f.write(f"  std_train_accuracy:  {std_train_scores[idx]:.4f}\n")
+            f.write(f"  mean_test_accuracy:  {mean_test_scores[idx]:.4f}\n")
+            f.write(f"  std_test_accuracy:   {std_test_scores[idx]:.4f}\n")
+            f.write(f"  params:              {params_list[idx]}\n\n")
+
+    print(f"Saved random search report to: {report_path}")
     return random_search.best_estimator_
 
 
-# run random search and save best result to file
-def perform_random_param_search(X_features: np.ndarray, y_labels: np.ndarray, save_to_file: bool = False):
-    Xtrain, Xtest, ytrain, ytest = train_test_split(
-        X_features, y_labels, test_size=0.3, stratify=y_labels,
-        random_state=42
+
+# Generate analysis and report and save to file
+def generate_model_analysis_report(Xtrain: np.ndarray,
+                                   Xtest: np.ndarray,
+                                   ytrain: np.ndarray,
+                                   ytest: np.ndarray,
+                                   already_fitted_clf: RandomForestClassifier,
+                                   directory: str,
+                                   classes: Dict[int, str]):
+
+    # Ensure output directory exists
+    os.makedirs(directory, exist_ok=True)
+
+    # ---------------------- Generate & Save ROC Chart to Directory (Multi-class) --------------------
+
+    # Force a consistent class order
+    label_ids = sorted(classes.keys())
+    n_classes = len(label_ids)
+
+    # Binarize y_test for multi-class ROC (one-vs-rest)
+    y_test_bin = label_binarize(ytest, classes=label_ids)
+
+    # Predict probabilities for each class
+    y_score = already_fitted_clf.predict_proba(Xtest)  # shape: (n_samples, n_classes)
+
+    # Compute ROC/AUC Statistics=
+    fpr = {}
+    tpr = {}
+    roc_auc = {}
+
+    for i, class_id in enumerate(label_ids):
+        fpr[class_id], tpr[class_id], _ = roc_curve(y_test_bin[:, i], y_score[:, i])
+        roc_auc[class_id] = auc(fpr[class_id], tpr[class_id])
+
+    # Plot all class ROC curves on the same figure
+    plt.figure(figsize=(7, 7))
+    for class_id in label_ids:
+        class_name = classes[class_id].lower()
+        plt.plot(
+            fpr[class_id],
+            tpr[class_id],
+            label=f"{class_name} (AUC = {roc_auc[class_id]:.2f})",
+        )
+
+    # Diagonal line for random chance
+    plt.plot([0, 1], [0, 1], linestyle="--", linewidth=1)
+
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curves (Random Forest Model)")
+    plt.grid(True, linestyle="--", alpha=0.3)
+    plt.legend(loc="lower right")
+    plt.tight_layout()
+
+    # Save ROC plot
+    roc_plot_filepath = os.path.join(directory, "roc_curves.png")
+    plt.savefig(roc_plot_filepath)
+    plt.close()
+    print(f"Saved ROC curves to: {roc_plot_filepath}")
+
+    # ---------------- Generate & Save Report to Directory -------------------------
+
+    report_path = os.path.join(directory, "random_forest_model_report.txt")
+
+    # Training accuracy
+    y_train_pred = already_fitted_clf.predict(Xtrain)
+    train_acc = accuracy_score(ytrain, y_train_pred)
+
+    # Test accuracy
+    y_test_pred = already_fitted_clf.predict(Xtest)
+    test_acc = accuracy_score(ytest, y_test_pred)
+
+    # Classification Report (force label order)
+    target_names = [classes[l].lower() for l in label_ids]
+    report_str = classification_report(
+        ytest,
+        y_test_pred,
+        labels=label_ids,
+        target_names=target_names,
     )
 
-    clf = run_random_param_search(Xtrain, ytrain)
+    # Generate Confusion Matrix
+    conf_matrix = confusion_matrix(ytest, y_test_pred, labels=label_ids)
 
-    if save_to_file:
-        joblib.dump(clf, 'trained_models/random_forest_model.joblib')
+    # Make labels pretty
+    display_names = [pretty_label(classes[l]) for l in label_ids]
+
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=conf_matrix,
+        display_labels=display_names,
+    )
+
+    disp.plot(cmap="Blues", xticks_rotation=45)
+    plt.tight_layout()
+    plt.subplots_adjust(left=0.25, bottom=0.35)
+
+    # Save Confusion Matrix
+    matrix_filepath = os.path.join(directory, "confusion_matrix.png")
+    plt.savefig(matrix_filepath)
+    plt.close()
+    print(f"Saved Confusion Matrix to: {matrix_filepath}")
+
+    # Build & Save Final Report
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("----- Random Forest Model Report -----\n")
+        f.write("======================================\n\n")
+        f.write("--------- Performance Metrics --------\n")
+        f.write(f"Training accuracy: {train_acc:.4f}\n")
+        f.write(f"Test accuracy: {test_acc:.4f}\n\n")
+
+        f.write("Per-class AUC (one-vs-rest):\n")
+        for class_id in label_ids:
+            class_name = classes[class_id].lower()
+            f.write(f"  {class_name}: {roc_auc[class_id]:.3f}\n")
+        f.write("\n")
+
+        f.write("Classification Report:\n")
+        f.write(report_str)
+        f.write("\n")
+
+    print(f"Saved model report to: {report_path}")
 
 
+# Create & Save various Random Forest Models
+def create_new_trained_models(run_k_fold_validation: bool,
+                              run_new_simple_rf_classifier: bool,
+                              run_random_param_search: bool,
+                              use_dummy_parameters: bool = False):
+    # Get the parent directory to persist trained models and reports
+    directory_to_save_models = (
+            c.RANDOM_FOREST_TRAINED_MODEL_DIR_PREFIX + "sandbox/" + generate_run_dir_name()
+    )
+    os.makedirs(directory_to_save_models, exist_ok=True)
+
+    # Read features in from file
+    X_features, y_labels = read_and_resample_features(c.DATA_SOURCE_DIRECTORY, c.CLASSES, 50)
+
+    # Perform k-fold validation random forest
+    if run_k_fold_validation:
+        perform_k_fold_randomforest(X_features,
+                                    y_labels,
+                                    report_directory=directory_to_save_models)
+    #
+    # Fit Random Forest Model
+    if run_new_simple_rf_classifier:
+        clf = RandomForestClassifier(n_estimators=200, random_state=42)
+        clf = train_randomforest(clf,
+                                 X_features,
+                                 y_labels,
+                                 classes=c.CLASSES,
+                                 report_directory=directory_to_save_models)
+    #
+    # # Perform Random Search
+    # if run_random_param_search:
+    #     perform_random_param_search(X_features,
+    #                                 y_labels,
+    #                                 model_selection = model_selection,
+    #                                 directory=directory_to_save_models,
+    #                                 classes=c.CLASSES,
+    #                                 use_dummy_model_configs=use_dummy_parameters)
 
 #---- Run Model -----
-root = "data/gonzalez_2017/data/"
-classes = {"metal_bumps": 4,"asphalt_bumps": 3, "potholes": 2, "regular_road": 1, "worn_out_road": 0}
-classes.keys()
+# root = "data/gonzalez_2017/data/"
+# classes = {"metal_bumps": 4,"asphalt_bumps": 3, "potholes": 2, "regular_road": 1, "worn_out_road": 0}
+# classes.keys()
 # read features in from file and resample them
-X_features, y_labels = read_and_resample_features(root, classes, 50)
+# X_features, y_labels = read_and_resample_features(root, classes, 50)
 
 # perform k-fold validation random forest
-perform_k_fold_randomforest(X_features, y_labels)
+# perform_k_fold_randomforest(X_features, y_labels)
 
-# fit random forest model
-clf = RandomForestClassifier(n_estimators=200, random_state=42)
-clf = train_randomforest(clf, X_features, y_labels, classes)
+# # fit random forest model
+# clf = RandomForestClassifier(n_estimators=200, random_state=42)
+# clf = train_randomforest(clf, X_features, y_labels, classes)
 
-perform_random_param_search(X_features, y_labels, save_to_file = True)
+# run_random_param_search(X_features, y_labels, save_to_file = True)
+#
+# for X_index in range(0,len(X_features)):
+#     if y_labels[X_index] == 0:
+#         plt.plot(range(0, 50), X_features[X_index], 'b')
+#     if y_labels[X_index] == 1:
+#         plt.plot(range(0, 50), X_features[X_index], 'r')
+#     if y_labels[X_index] == 2:
+#         plt.plot(range(0, 50), X_features[X_index], 'g')
+#     if y_labels[X_index] == 3:
+#         plt.plot(range(0, 50), X_features[X_index], 'm')
+# plt.show()
 
-for X_index in range(0,len(X_features)):
-    if y_labels[X_index] == 0:
-        plt.plot(range(0, 50), X_features[X_index], 'b')
-    if y_labels[X_index] == 1:
-        plt.plot(range(0, 50), X_features[X_index], 'r')
-    if y_labels[X_index] == 2:
-        plt.plot(range(0, 50), X_features[X_index], 'g')
-    if y_labels[X_index] == 3:
-        plt.plot(range(0, 50), X_features[X_index], 'm')
-plt.show()
+if __name__ == "__main__":
+    create_new_trained_models(run_k_fold_validation=True,
+                              run_new_simple_rf_classifier=True,
+                              run_random_param_search=True)
+
+#Todo:  Swap the class labels again....
+
+# remove dummy model configs
