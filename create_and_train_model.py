@@ -1,5 +1,8 @@
 import os, glob
 from datetime import datetime
+
+from sklearn.base import BaseEstimator
+
 import constants as c
 from typing import Dict, Tuple
 import numpy as np
@@ -13,6 +16,10 @@ from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val
 from sklearn.metrics import classification_report, roc_curve, auc
 from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
 from scipy.interpolate import interp1d
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
 
 # Get unique name for bert_embeddings directory
 def generate_run_dir_name() -> str:
@@ -73,6 +80,59 @@ def read_and_resample_features(file_root: str,
     y_labels = np.array(y_labels)
 
     return X_features, y_labels
+
+
+# Train and Evaluate a Logistic Regression Classifier
+def train_logistic_regression(X_features: np.ndarray,
+                              y_labels: np.ndarray,
+                              classes: Dict[int, str],
+                              report_directory: str,
+                              random_state: int = 42,
+                              test_size: float = 0.3,
+                              ) -> Pipeline:
+    print("----- BEGIN Logistic Regression -----")
+
+    # Split into train/test
+    Xtrain, Xtest, ytrain, ytest = train_test_split(
+        X_features,
+        y_labels,
+        test_size=test_size,
+        stratify=y_labels,
+        random_state=random_state,
+    )
+
+    # Build pipeline
+    logreg_pipeline = Pipeline(
+        steps=[
+            ("scaler", StandardScaler()),
+            ("clf", LogisticRegression(
+                max_iter=1000,
+                multi_class="auto",
+                random_state=random_state,
+            )),
+        ]
+    )
+
+    # Train model
+    logreg_pipeline.fit(Xtrain, ytrain)
+
+    # Directory for reports
+    full_output_dir = os.path.join(report_directory, "logistic_regression_model")
+    os.makedirs(full_output_dir, exist_ok=True)
+
+    # Generate Report
+    generate_model_analysis_report(
+        Xtrain,
+        Xtest,
+        ytrain,
+        ytest,
+        already_fitted_clf=logreg_pipeline,
+        directory=full_output_dir,
+        classes=classes,
+    )
+
+    print("----- END Logistic Regression -----")
+    return logreg_pipeline
 
 
 # Train and test a random forest model with a simple test/training split
@@ -286,7 +346,7 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
                                    Xtest: np.ndarray,
                                    ytrain: np.ndarray,
                                    ytest: np.ndarray,
-                                   already_fitted_clf: RandomForestClassifier,
+                                   already_fitted_clf: BaseEstimator,
                                    directory: str,
                                    classes: Dict[int, str]):
 
@@ -406,7 +466,8 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
 # Create & Save various Random Forest Models
 def create_new_trained_models(run_k_fold_validation: bool,
                               run_new_simple_rf_classifier: bool,
-                              run_random_param_search: bool):
+                              run_random_param_search: bool,
+                              run_logistic_regression: bool):
 
     # Get the parent directory to persist trained models and reports
     directory_to_save_models = (
@@ -439,8 +500,16 @@ def create_new_trained_models(run_k_fold_validation: bool,
                                         directory=directory_to_save_models,
                                         classes=c.CLASSES)
 
+    # Perform Logistic Regression
+    if run_logistic_regression:
+        train_logistic_regression(X_features,
+                                  y_labels,
+                                  classes=c.CLASSES,
+                                  report_directory=directory_to_save_models)
+
 
 if __name__ == "__main__":
     create_new_trained_models(run_k_fold_validation=True,
                               run_new_simple_rf_classifier=True,
-                              run_random_param_search=True)
+                              run_random_param_search=True,
+                              run_logistic_regression=True)
