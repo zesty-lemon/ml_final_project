@@ -15,7 +15,7 @@ Best mean CV accuracy: 0.7343
 
 Search space
 -----------
-{'n_estimators': <scipy.stats._distn_infrastructure.rv_discrete_frozen object at 0x10c795be0>, 'max_depth': [None, 10, 20, 30, 40, 50, 60], 'min_samples_split': <scipy.stats._distn_infrastructure.rv_discrete_frozen object at 0x10d392d50>, 'min_samples_leaf': <scipy.stats._distn_infrastructure.rv_discrete_frozen object at 0x10d392fd0>, 'max_features': ['sqrt', 'log2', None], 'bootstrap': [True, False], 'criterion': ['gini', 'entropy', 'log_loss']}
+{'n_estimators': <scipy.stats._distn_infrastructure.rv_discrete_frozen object at 0x116be83e0>, 'max_depth': [None, 10, 20, 30, 40, 50, 60], 'min_samples_split': <scipy.stats._distn_infrastructure.rv_discrete_frozen object at 0x116bea3f0>, 'min_samples_leaf': <scipy.stats._distn_infrastructure.rv_discrete_frozen object at 0x116b2bbf0>, 'max_features': ['sqrt', 'log2', None], 'bootstrap': [True, False], 'criterion': ['gini', 'entropy', 'log_loss']}
 
 All tried configurations (sorted by mean accuracy)
 -------------------------------------------------

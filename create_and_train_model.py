@@ -12,6 +12,7 @@ from scipy.stats import randint
 import joblib
 from sklearn.preprocessing import label_binarize
 from sklearn.ensemble import RandomForestClassifier
+from scipy.signal import savgol_filter
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, RandomizedSearchCV
 from sklearn.metrics import classification_report, roc_curve, auc
 from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
@@ -58,9 +59,13 @@ def interpolate_signal(x_raw_data, target_len=50):
 # Read features in from file
 # Split into features and labels
 # Resize the features to be consistent length
+# optionally enable
 def read_and_resample_features(file_root: str,
                                classes: Dict[int, str],
-                               target_len: int = 50) -> Tuple[np.ndarray, np.ndarray]:
+                               target_len: int = 50,
+                               use_savgol: bool = False,
+                               savgol_window: int = 9,
+                               savgol_poly: int = 3) -> Tuple[np.ndarray, np.ndarray]:
 
     X_features = []  # list of all feature arrays
     y_labels = [] # list of corresponding labels
@@ -71,8 +76,17 @@ def read_and_resample_features(file_root: str,
 
         for file_path in glob.glob(pattern):
             x_raw_data = read_series(file_path)
-            x_resampled = interpolate_signal(x_raw_data, target_len=target_len)
 
+            # Optionally apply Savgol before interpolating signal
+            if use_savgol:
+                x_raw_data = apply_savgol_smoothing(
+                    x_raw_data,
+                    window_length=savgol_window,
+                    polyorder=savgol_poly,
+                )
+
+            # Interpolate/resample signal down or up to target length
+            x_resampled = interpolate_signal(x_raw_data, target_len=target_len)
             X_features.append(x_resampled)
             y_labels.append(class_id)
 
@@ -82,6 +96,34 @@ def read_and_resample_features(file_root: str,
     return X_features, y_labels
 
 
+# Apply Savgol Smoothing to Data
+def apply_savgol_smoothing(x_raw_data: NDArray[np.float32],
+                           window_length: int =  9,
+                           polyorder: int = 3
+                           ) -> NDArray[np.float32]:
+
+    len_feature_array = len(x_raw_data)
+
+    # If the signal is too short return it without smoothing
+    if len_feature_array < polyorder + 2:
+        return x_raw_data
+
+    # Ensure window_length is odd and not longer than the dataa itself
+    if window_length > len_feature_array:
+        window_length = len_feature_array if len_feature_array % 2 == 1 else len_feature_array - 1
+
+    if window_length % 2 == 0:
+        window_length -= 1
+
+    # Ensure window_length larger than polyorder to avoid errors
+    if window_length <= polyorder:
+        window_length = polyorder + 1 if (polyorder + 1) % 2 == 1 else polyorder + 2
+        if window_length > len_feature_array:
+            window_length = len_feature_array if len_feature_array % 2 == 1 else len_feature_array - 1
+
+    return savgol_filter(x_raw_data, window_length=window_length, polyorder=polyorder).astype(np.float32)
+
+
 # Train and Evaluate a Logistic Regression Classifier
 def train_logistic_regression(X_features: np.ndarray,
                               y_labels: np.ndarray,
@@ -89,7 +131,7 @@ def train_logistic_regression(X_features: np.ndarray,
                               report_directory: str,
                               random_state: int = 42,
                               test_size: float = 0.3,
-                              ) -> Pipeline:
+                              optional_annotation:str = "") -> Pipeline:
     print("----- BEGIN Logistic Regression -----")
 
     # Split into train/test
@@ -121,15 +163,14 @@ def train_logistic_regression(X_features: np.ndarray,
     os.makedirs(full_output_dir, exist_ok=True)
 
     # Generate Report
-    generate_model_analysis_report(
-        Xtrain,
-        Xtest,
-        ytrain,
-        ytest,
-        already_fitted_clf=logreg_pipeline,
-        directory=full_output_dir,
-        classes=classes,
-    )
+    generate_model_analysis_report(Xtrain,
+                                   Xtest,
+                                   ytrain,
+                                   ytest,
+                                   already_fitted_clf=logreg_pipeline,
+                                   directory=full_output_dir,
+                                   classes=classes,
+                                   optional_annotation=optional_annotation)
 
     print("----- END Logistic Regression -----")
     return logreg_pipeline
@@ -142,7 +183,8 @@ def train_randomforest(clf: RandomForestClassifier,
                        classes: Dict[int, str],
                        report_directory: str,
                        random_state: int = 42,
-                       test_size=0.3) -> RandomForestClassifier:
+                       test_size=0.3,
+                       optional_annotation: str = "") -> RandomForestClassifier:
 
     # Split into Test/Training
     Xtrain, Xtest, ytrain, ytest = train_test_split(X_features,
@@ -163,7 +205,8 @@ def train_randomforest(clf: RandomForestClassifier,
                                    ytest,
                                    clf,
                                    full_output_dir,
-                                   classes)
+                                   classes,
+                                   optional_annotation=optional_annotation)
 
     return clf
 
@@ -173,7 +216,8 @@ def perform_k_fold_randomforest(X_features: np.ndarray,
                                 y_labels: np.ndarray,
                                 report_directory: str,
                                 n_estimators: int = 200,
-                                random_state: int = 42):
+                                random_state: int = 42,
+                                optional_annotation:str = ""):
 
     print(f"---- BEGIN Cross Validation (Random Forest) ----")
     # Run Cross Validation and get scores
@@ -193,6 +237,8 @@ def perform_k_fold_randomforest(X_features: np.ndarray,
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("Random Forest K-Fold Cross-Validation Report\n")
         f.write("===========================================\n\n")
+        if not optional_annotation:
+            f.write(f"Additional Info: {optional_annotation}\n")
         f.write(f"n_estimators: {n_estimators}\n")
         f.write(f"random_state: {random_state}\n")
         f.write(f"n_splits: {cv.get_n_splits()}\n\n")
@@ -305,7 +351,8 @@ def perform_random_param_search(X_train: np.ndarray,
 def orchestrate_random_param_search(X_features: np.ndarray,
                                 y_labels: np.ndarray,
                                 directory: str,
-                                classes: Dict[int, str]) -> RandomForestClassifier:
+                                classes: Dict[int, str],
+                                optional_annotation: str = "") -> RandomForestClassifier:
     print("----- BEGIN Randomized Search CV -----")
 
     # Split into Test/Train sets
@@ -335,7 +382,8 @@ def orchestrate_random_param_search(X_features: np.ndarray,
                                    ytest,
                                    clf,
                                    output_dir,
-                                   classes)
+                                   classes,
+                                   optional_annotation=optional_annotation)
 
     print("----- END Randomized Search CV -----")
     return clf
@@ -348,7 +396,8 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
                                    ytest: np.ndarray,
                                    already_fitted_clf: BaseEstimator,
                                    directory: str,
-                                   classes: Dict[int, str]):
+                                   classes: Dict[int, str],
+                                   optional_annotation: str = ""):
 
     # Ensure output directory exists
     os.makedirs(directory, exist_ok=True)
@@ -387,9 +436,12 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
     # Diagonal line for random chance
     plt.plot([0, 1], [0, 1], linestyle="--", linewidth=1)
 
+    title = "ROC Curves (Random Forest Model)"
+    if optional_annotation:
+        title = title + "\n" +optional_annotation
     plt.xlabel("False Positive Rate")
     plt.ylabel("True Positive Rate")
-    plt.title("ROC Curves (Random Forest Model)")
+    plt.title(title)
     plt.grid(True, linestyle="--", alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
@@ -446,6 +498,7 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("----- Random Forest Model Report -----\n")
         f.write("======================================\n\n")
+
         f.write("--------- Performance Metrics --------\n")
         f.write(f"Training accuracy: {train_acc:.4f}\n")
         f.write(f"Test accuracy: {test_acc:.4f}\n\n")
@@ -460,14 +513,16 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
         f.write(report_str)
         f.write("\n")
 
+        f.write(f"Optional Annotation: {optional_annotation}")
     print(f"Saved model report to: {report_path}")
 
 
-# Create & Save various Random Forest Models
+# Train various models
 def create_new_trained_models(run_k_fold_validation: bool,
                               run_new_simple_rf_classifier: bool,
                               run_random_param_search: bool,
-                              run_logistic_regression: bool):
+                              run_logistic_regression: bool,
+                              run_with_smoothing: bool):
 
     # Get the parent directory to persist trained models and reports
     directory_to_save_models = (
@@ -475,8 +530,21 @@ def create_new_trained_models(run_k_fold_validation: bool,
     )
     os.makedirs(directory_to_save_models, exist_ok=True)
 
-    # Read features in from file
-    X_features, y_labels = read_and_resample_features(c.DATA_SOURCE_DIRECTORY, c.CLASSES, 50)
+    optional_annotation = ""
+    if run_with_smoothing:
+        # Read in features & apply Savitzky–Golay smoothing
+        X_features, y_labels = read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
+                                                          c.CLASSES,
+                                                          target_len=50,
+                                                          use_savgol=True,
+                                                          savgol_window=9,
+                                                          savgol_poly=3)
+        optional_annotation = "With Savitzky–Golay Smoothing"
+    else:
+        # Read features in from file
+        X_features, y_labels = read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
+                                                          c.CLASSES,
+                                                          target_len = 50)
 
     # Perform k-fold validation random forest
     if run_k_fold_validation:
@@ -491,25 +559,37 @@ def create_new_trained_models(run_k_fold_validation: bool,
                                  X_features,
                                  y_labels,
                                  classes=c.CLASSES,
-                                 report_directory=directory_to_save_models)
+                                 report_directory=directory_to_save_models,
+                                 optional_annotation=optional_annotation)
 
     # Perform Random Search
     if run_random_param_search:
         orchestrate_random_param_search(X_features,
                                         y_labels,
                                         directory=directory_to_save_models,
-                                        classes=c.CLASSES)
+                                        classes=c.CLASSES,
+                                        optional_annotation = optional_annotation)
 
     # Perform Logistic Regression
     if run_logistic_regression:
         train_logistic_regression(X_features,
                                   y_labels,
                                   classes=c.CLASSES,
-                                  report_directory=directory_to_save_models)
+                                  report_directory=directory_to_save_models,
+                                  optional_annotation=optional_annotation)
 
 
 if __name__ == "__main__":
+    # Run with Savitzky–Golay Smoothing
     create_new_trained_models(run_k_fold_validation=True,
                               run_new_simple_rf_classifier=True,
                               run_random_param_search=True,
-                              run_logistic_regression=True)
+                              run_logistic_regression=True,
+                              run_with_smoothing=True)
+
+    # Run without Savitzky–Golay Smoothing
+    create_new_trained_models(run_k_fold_validation=True,
+                              run_new_simple_rf_classifier=True,
+                              run_random_param_search=True,
+                              run_logistic_regression=True,
+                              run_with_smoothing=False)

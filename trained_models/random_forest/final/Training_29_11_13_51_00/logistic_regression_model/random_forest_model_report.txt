@@ -1,0 +1,28 @@
+----- Random Forest Model Report -----
+======================================
+
+--------- Performance Metrics --------
+Training accuracy: 0.6343
+Test accuracy: 0.3867
+
+Per-class AUC (one-vs-rest):
+  worn_out_road: 0.509
+  regular_road: 0.715
+  potholes: 0.844
+  asphalt_bumps: 0.757
+  metal_bumps: 0.663
+
+Classification Report:
+               precision    recall  f1-score   support
+
+worn_out_road       0.24      0.27      0.25        30
+ regular_road       0.30      0.23      0.26        30
+     potholes       0.57      0.53      0.55        30
+asphalt_bumps       0.38      0.53      0.44        30
+  metal_bumps       0.48      0.37      0.42        30
+
+     accuracy                           0.39       150
+    macro avg       0.39      0.39      0.39       150
+ weighted avg       0.39      0.39      0.39       150
+
+Optional Annotation: 
