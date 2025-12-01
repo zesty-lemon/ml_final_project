@@ -3,6 +3,8 @@ from datetime import datetime
 
 from sklearn.base import BaseEstimator
 
+from scipy.stats import skew, kurtosis, entropy
+
 import constants as c
 from typing import Dict, Tuple
 import numpy as np
@@ -12,7 +14,7 @@ from scipy.stats import randint
 import joblib
 from sklearn.preprocessing import label_binarize
 from sklearn.ensemble import RandomForestClassifier
-from scipy.signal import savgol_filter
+from scipy.signal import savgol_filter, find_peaks
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, RandomizedSearchCV
 from sklearn.metrics import classification_report, roc_curve, auc
 from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
@@ -43,6 +45,54 @@ def pretty_label(s: str) -> str:
 # Read csv into NDArray, skipping the first row
 def read_series(filepath) -> NDArray[np.float32]:
     return np.loadtxt(filepath, skiprows=1, delimiter=',').astype(np.float32)
+
+
+# Extract as many features as possible and return as an ndarray
+def extract_stat_features(x: np.ndarray) -> np.ndarray:
+    # Basic Statistics
+    mean_val = np.mean(x)
+    std_val = np.std(x)
+    min_val = np.min(x)
+    max_val = np.max(x)
+    median_val = np.median(x)
+    rms_val = np.sqrt(np.mean(x**2))
+    ptp_val = np.ptp(x)
+
+    # Shape Statistics
+    skew_val = skew(x)
+    kurt_val = kurtosis(x)
+
+    # Zero Crossings (how many times x crosses the 0 on the y axis)
+    zero_crossings = np.sum((x[:-1] * x[1:]) < 0)
+
+    # Entrophy
+    # Add tiny epsilon for numerical stability
+    entropy_val = entropy(np.abs(x) + 1e-12, base=None)
+
+    # Peaks Statistics
+    peaks, properties = find_peaks(x, prominence=0.05)
+    num_peaks = len(peaks)
+    mean_peak_height = np.mean(x[peaks]) if num_peaks > 0 else 0.0
+    mean_peak_prominence = (
+        np.mean(properties["prominences"]) if num_peaks > 0 else 0.0
+    )
+
+    return np.array([
+        mean_val,
+        std_val,
+        min_val,
+        max_val,
+        median_val,
+        rms_val,
+        ptp_val,
+        skew_val,
+        kurt_val,
+        zero_crossings,
+        entropy_val,
+        num_peaks,
+        mean_peak_height,
+        mean_peak_prominence,
+    ], dtype=np.float32)
 
 
 # Resample the raw data into a fixed length using interpolation
@@ -85,9 +135,16 @@ def read_and_resample_features(file_root: str,
                     polyorder=savgol_poly,
                 )
 
+            # Combine raw signal and stats
+            stat_features = extract_stat_features(x_raw_data)
+
             # Interpolate/resample signal down or up to target length
             x_resampled = interpolate_signal(x_raw_data, target_len=target_len)
-            X_features.append(x_resampled)
+
+            # Combine feature stats with interpolated vector
+            full_feature_vector = np.hstack([x_resampled, stat_features])
+
+            X_features.append(full_feature_vector)
             y_labels.append(class_id)
 
     X_features = np.array(X_features)
@@ -269,7 +326,7 @@ def perform_random_param_search(X_train: np.ndarray,
     # Define the parameter distributions
     param_distributions = {
         "n_estimators": randint(100, 400),
-        "max_depth": [None] + list(range(10, 61, 10)),  # none = unlimited
+        "max_depth": [None] + list(range(10, 61, 10)),
         "min_samples_split": randint(2, 20),
         "min_samples_leaf": randint(1, 10),
         "max_features": ['sqrt', 'log2', None],
@@ -578,43 +635,43 @@ def create_new_trained_models(run_k_fold_validation: bool,
                                   report_directory=directory_to_save_models,
                                   optional_annotation=optional_annotation)
 
-
-    for X_index in range(0,len(X_features)):
-        # if y_labels[X_index] == 0:
-        #     plt.plot(range(0, 50), X_features[X_index], 'b')
-        if y_labels[X_index] == 1:
-            plt.plot(range(0, 50), X_features[X_index], 'r')
-            break
-        # if y_labels[X_index] == 2:
-        #     plt.plot(range(0, 50), X_features[X_index], 'g')
-        #     break
-        # if y_labels[X_index] == 3:
-        #     plt.plot(range(0, 50), X_features[X_index], 'm')
-
-    plt.xlabel("Resampled time step (0–49)")
-    plt.ylabel("Vertical acceleration $a_z$ (m/s²)")
-    if optional_annotation:
-        plt.title(f"Example Vertical Accelerometer Signal for Regular Road\n{optional_annotation}")
-    else:
-        plt.title(f"Example Vertical Accelerometer Signal for Regular Road")
-
-    plt.show()
+    #
+    # for X_index in range(0,len(X_features)):
+    #     # if y_labels[X_index] == 0:
+    #     #     plt.plot(range(0, 50), X_features[X_index], 'b')
+    #     if y_labels[X_index] == 1:
+    #         plt.plot(range(0, 50), X_features[X_index], 'r')
+    #         break
+    #     # if y_labels[X_index] == 2:
+    #     #     plt.plot(range(0, 50), X_features[X_index], 'g')
+    #     #     break
+    #     # if y_labels[X_index] == 3:
+    #     #     plt.plot(range(0, 50), X_features[X_index], 'm')
+    #
+    # plt.xlabel("Resampled time step (0–49)")
+    # plt.ylabel("Vertical acceleration $a_z$ (m/s²)")
+    # if optional_annotation:
+    #     plt.title(f"Example Vertical Accelerometer Signal for Regular Road\n{optional_annotation}")
+    # else:
+    #     plt.title(f"Example Vertical Accelerometer Signal for Regular Road")
+    #
+    # plt.show()
 
 
 if __name__ == "__main__":
     # Run with Savitzky–Golay Smoothing
     create_new_trained_models(run_k_fold_validation=False,
                               run_new_simple_rf_classifier=False,
-                              run_random_param_search=False,
+                              run_random_param_search=True,
                               run_logistic_regression=False,
                               run_with_smoothing=True)
 
-    # Run with Savitzky–Golay Smoothing
-    create_new_trained_models(run_k_fold_validation=False,
-                              run_new_simple_rf_classifier=False,
-                              run_random_param_search=False,
-                              run_logistic_regression=False,
-                              run_with_smoothing=False)
+    # # Run with Savitzky–Golay Smoothing
+    # create_new_trained_models(run_k_fold_validation=False,
+    #                           run_new_simple_rf_classifier=False,
+    #                           run_random_param_search=False,
+    #                           run_logistic_regression=False,
+    #                           run_with_smoothing=False)
 
     # # Run With Savitzky–Golay Smoothing
     # create_new_trained_models(run_k_fold_validation=True,
