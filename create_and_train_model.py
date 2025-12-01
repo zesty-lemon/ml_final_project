@@ -579,17 +579,53 @@ def create_new_trained_models(run_k_fold_validation: bool,
                                   optional_annotation=optional_annotation)
 
 
+    for X_index in range(0,len(X_features)):
+        # if y_labels[X_index] == 0:
+        #     plt.plot(range(0, 50), X_features[X_index], 'b')
+        if y_labels[X_index] == 1:
+            plt.plot(range(0, 50), X_features[X_index], 'r')
+            break
+        # if y_labels[X_index] == 2:
+        #     plt.plot(range(0, 50), X_features[X_index], 'g')
+        #     break
+        # if y_labels[X_index] == 3:
+        #     plt.plot(range(0, 50), X_features[X_index], 'm')
+
+    plt.xlabel("Resampled time step (0–49)")
+    plt.ylabel("Vertical acceleration $a_z$ (m/s²)")
+    if optional_annotation:
+        plt.title(f"Example Vertical Accelerometer Signal for Regular Road\n{optional_annotation}")
+    else:
+        plt.title(f"Example Vertical Accelerometer Signal for Regular Road")
+
+    plt.show()
+
+
 if __name__ == "__main__":
     # Run with Savitzky–Golay Smoothing
-    create_new_trained_models(run_k_fold_validation=True,
-                              run_new_simple_rf_classifier=True,
-                              run_random_param_search=True,
-                              run_logistic_regression=True,
+    create_new_trained_models(run_k_fold_validation=False,
+                              run_new_simple_rf_classifier=False,
+                              run_random_param_search=False,
+                              run_logistic_regression=False,
                               run_with_smoothing=True)
 
-    # Run without Savitzky–Golay Smoothing
-    create_new_trained_models(run_k_fold_validation=True,
-                              run_new_simple_rf_classifier=True,
-                              run_random_param_search=True,
-                              run_logistic_regression=True,
+    # Run with Savitzky–Golay Smoothing
+    create_new_trained_models(run_k_fold_validation=False,
+                              run_new_simple_rf_classifier=False,
+                              run_random_param_search=False,
+                              run_logistic_regression=False,
                               run_with_smoothing=False)
+
+    # # Run With Savitzky–Golay Smoothing
+    # create_new_trained_models(run_k_fold_validation=True,
+    #                           run_new_simple_rf_classifier=True,
+    #                           run_random_param_search=True,
+    #                           run_logistic_regression=True,
+    #                           run_with_smoothing=True)
+
+    # # Run without Savitzky–Golay Smoothing
+    # create_new_trained_models(run_k_fold_validation=True,
+    #                           run_new_simple_rf_classifier=True,
+    #                           run_random_param_search=True,
+    #                           run_logistic_regression=True,
+    #                           run_with_smoothing=False)
