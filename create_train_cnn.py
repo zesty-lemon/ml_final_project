@@ -1,4 +1,6 @@
 import os
+from typing import Tuple
+
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -7,13 +9,14 @@ import create_and_train_model
 import constants as c
 import tensorflow as tf
 from tensorflow import keras
+
 from tensorflow.keras import layers
 
 
 def split_test_train_reformat(X_features: np.ndarray,
                               y_labels: np.ndarray,
                               test_size = 0.3,
-                              random_state = 43):
+                              random_state = 43) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
     Xtrain, Xtest, ytrain, ytest = train_test_split(X_features,
                                                     y_labels,
@@ -23,6 +26,8 @@ def split_test_train_reformat(X_features: np.ndarray,
 
     Xtrain = Xtrain.reshape((Xtrain.shape[0], Xtrain.shape[1], 1))
     Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], 1))
+
+    return Xtrain, Xtest, ytrain, ytest
 
 
 def create_new_trained_models(run_with_smoothing: bool):
@@ -48,8 +53,30 @@ def create_new_trained_models(run_with_smoothing: bool):
                                                                                  c.CLASSES,
                                                                                  target_len=100)
 
-    split_test_train_reformat(X_features, y_labels)
+    Xtrain, Xtest, ytrain, ytest = split_test_train_reformat(X_features, y_labels)
 
+    n_timesteps, n_features = Xtrain.shape[1], Xtrain.shape[2]
+    n_classes = len(c.CLASSES)
+
+    model = keras.Sequential([
+        layers.Input(shape=(n_timesteps, n_features)),
+
+        layers.Conv1D(filters=64, kernel_size=3, activation='relu'),
+        layers.Dropout(0.5),
+
+        layers.Conv1D(filters=64, kernel_size=3, activation='relu'),
+        layers.GlobalAveragePooling1D(),
+
+        layers.Dense(n_classes, activation='softmax'),
+    ])
+
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+
+    model.summary()
 
 if __name__ == "__main__":
     # Run with Savitzky–Golay Smoothing
