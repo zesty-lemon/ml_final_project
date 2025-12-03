@@ -1,9 +1,28 @@
 import os
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
+
 import create_and_train_model
 import constants as c
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
+
+def split_test_train_reformat(X_features: np.ndarray,
+                              y_labels: np.ndarray,
+                              test_size = 0.3,
+                              random_state = 43):
+
+    Xtrain, Xtest, ytrain, ytest = train_test_split(X_features,
+                                                    y_labels,
+                                                    test_size=test_size,
+                                                    stratify=y_labels,
+                                                    random_state=random_state)
+
+    Xtrain = Xtrain.reshape((Xtrain.shape[0], Xtrain.shape[1], 1))
+    Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], 1))
 
 
 def create_new_trained_models(run_with_smoothing: bool):
@@ -18,7 +37,7 @@ def create_new_trained_models(run_with_smoothing: bool):
         # Read in features & apply Savitzky–Golay smoothing
         X_features, y_labels = create_and_train_model.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
                                                                                  c.CLASSES,
-                                                                                 target_len=50,
+                                                                                 target_len=100,
                                                                                  use_savgol=True,
                                                                                  savgol_window=9,
                                                                                  savgol_poly=3)
@@ -27,8 +46,9 @@ def create_new_trained_models(run_with_smoothing: bool):
         # Read features in from file
         X_features, y_labels = create_and_train_model.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
                                                                                  c.CLASSES,
-                                                                                 target_len=50)
+                                                                                 target_len=100)
 
+    split_test_train_reformat(X_features, y_labels)
 
 
 if __name__ == "__main__":

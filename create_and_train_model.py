@@ -115,7 +115,8 @@ def read_and_resample_features(file_root: str,
                                target_len: int = 50,
                                use_savgol: bool = False,
                                savgol_window: int = 9,
-                               savgol_poly: int = 3) -> Tuple[np.ndarray, np.ndarray]:
+                               savgol_poly: int = 3,
+                               extract_stat_features: bool = False) -> Tuple[np.ndarray, np.ndarray]:
 
     X_features = []  # list of all feature arrays
     y_labels = [] # list of corresponding labels
@@ -144,7 +145,11 @@ def read_and_resample_features(file_root: str,
             # Combine feature stats with interpolated vector
             full_feature_vector = np.hstack([x_resampled, stat_features])
 
-            X_features.append(full_feature_vector)
+            if extract_stat_features:
+                X_features.append(full_feature_vector)
+            else:
+                X_features.append(x_resampled)
+
             y_labels.append(class_id)
 
     X_features = np.array(X_features)
