@@ -45,13 +45,15 @@ def create_new_trained_models(run_with_smoothing: bool):
                                                                                  target_len=100,
                                                                                  use_savgol=True,
                                                                                  savgol_window=9,
-                                                                                 savgol_poly=3)
+                                                                                 savgol_poly=3,
+                                                                                 add_stat_features = False)
         optional_annotation = "With Savitzky–Golay Smoothing"
     else:
         # Read features in from file
         X_features, y_labels = create_and_train_model.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
                                                                                  c.CLASSES,
-                                                                                 target_len=100)
+                                                                                 target_len=100,
+                                                                                 add_stat_features = False)
 
     Xtrain, Xtest, ytrain, ytest = split_test_train_reformat(X_features, y_labels)
 
@@ -61,13 +63,16 @@ def create_new_trained_models(run_with_smoothing: bool):
     model = keras.Sequential([
         layers.Input(shape=(n_timesteps, n_features)),
 
-        layers.Conv1D(filters=64, kernel_size=3, activation='relu'),
-        layers.Dropout(0.5),
+        layers.Conv1D(64, 5, padding="same", activation="relu"),
+        layers.Conv1D(64, 5, padding="same", activation="relu"),
+        layers.MaxPooling1D(2),
 
-        layers.Conv1D(filters=64, kernel_size=3, activation='relu'),
+        layers.Conv1D(128, 3, padding="same", activation="relu"),
         layers.GlobalAveragePooling1D(),
 
-        layers.Dense(n_classes, activation='softmax'),
+        layers.Dense(64, activation="relu"),
+        layers.Dropout(0.5),
+        layers.Dense(n_classes, activation="softmax"),
     ])
 
     model.compile(
@@ -78,7 +83,20 @@ def create_new_trained_models(run_with_smoothing: bool):
 
     model.summary()
 
+    history = model.fit(Xtrain, ytrain,
+                        validation_data=(Xtest, ytest),
+                        epochs=100,
+                        batch_size=12,
+                        callbacks=[
+                            keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)
+                        ]
+                        )
+
+    test_loss, test_acc = model.evaluate(Xtest, ytest, verbose=1)
+
+    print(f"\nFinal Test Accuracy: {test_acc:.2%}")
+
 if __name__ == "__main__":
-    # Run with Savitzky–Golay Smoothing
-    create_new_trained_models(run_with_smoothing=True)
+    create_new_trained_models(run_with_smoothing=False)
+
 #Todo: Move generate run dir name to util class.
