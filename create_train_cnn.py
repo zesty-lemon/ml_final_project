@@ -4,8 +4,10 @@ from typing import Tuple, Dict
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-from sklearn.metrics import roc_curve, auc
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_curve, auc, accuracy_score, classification_report, confusion_matrix, \
+    ConfusionMatrixDisplay
+from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
+
 from sklearn.preprocessing import label_binarize
 
 import create_and_train_model
@@ -88,17 +90,85 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
     plt.tight_layout()
 
     # Save ROC plot
-    # # roc_plot_filepath = os.path.join(directory, "roc_curves.png")
-    # plt.savefig(roc_plot_filepath)
+    roc_plot_filepath = os.path.join(directory, "roc_curves.png")
+    plt.savefig(roc_plot_filepath)
     plt.show()
     plt.close()
-    # print(f"Saved ROC curves to: {roc_plot_filepath}")
+    print(f"Saved ROC curves to: {roc_plot_filepath}")
+
+    # ---------------- Generate & Save Report to Directory -------------------------
+
+    report_path = os.path.join(directory, "1D_CNN_model_report.txt")
+
+    # Training accuracy
+    y_train_pred = model.predict(Xtrain)
+    y_train_pred = np.argmax(y_train_pred, axis=-1) # model returns probabilties, we only care about best predicred class
+    train_acc = accuracy_score(ytrain, y_train_pred)
+
+    # Test accuracy
+    y_test_pred = model.predict(Xtest)
+    y_test_pred = np.argmax(y_test_pred, axis=-1) # model returns probabilties, we only care about best predicred class
+    test_acc = accuracy_score(ytest, y_test_pred)
+
+    print(f"Train Accuracy: {train_acc} Test Accuracy: {test_acc}")
+
+    # Classification Report (force label order)
+    target_names = [classes[l].lower() for l in label_ids]
+    report_str = classification_report(
+        ytest,
+        y_test_pred,
+        labels=label_ids,
+        target_names=target_names,
+    )
+
+    # Generate Confusion Matrix
+    conf_matrix = confusion_matrix(ytest, y_test_pred, labels=label_ids)
+
+    # Make labels pretty
+    display_names = [create_and_train_model.pretty_label(classes[l]) for l in label_ids]
+
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=conf_matrix,
+        display_labels=display_names,
+    )
+
+    disp.plot(cmap="Blues", xticks_rotation=45)
+    plt.tight_layout()
+    plt.subplots_adjust(left=0.25, bottom=0.35)
+
+    # Save Confusion Matrix
+    matrix_filepath = os.path.join(directory, "confusion_matrix.png")
+    plt.savefig(matrix_filepath)
+    plt.close()
+    print(f"Saved Confusion Matrix to: {matrix_filepath}")
+
+    # Build & Save Final Report
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("----- Random Forest Model Report -----\n")
+        f.write("======================================\n\n")
+
+        f.write("--------- Performance Metrics --------\n")
+        f.write(f"Training accuracy: {train_acc:.4f}\n")
+        f.write(f"Test accuracy: {test_acc:.4f}\n\n")
+
+        f.write("Per-class AUC (one-vs-rest):\n")
+        for class_id in label_ids:
+            class_name = classes[class_id].lower()
+            f.write(f"  {class_name}: {roc_auc[class_id]:.3f}\n")
+        f.write("\n")
+
+        f.write("Classification Report:\n")
+        f.write(report_str)
+        f.write("\n")
+
+        f.write(f"Optional Annotation: {optional_annotation}")
+    print(f"Saved model report to: {report_path}")
 
 
 def create_new_trained_models(run_with_smoothing: bool):
     # Get the parent directory to persist trained models and reports
     directory_to_save_models = (
-            c.RANDOM_FOREST_TRAINED_MODEL_DIR_PREFIX + "sandbox/tensorflow/" + create_and_train_model.generate_run_dir_name()
+            "trained_models/1d_cnn/sandbox/" + create_and_train_model.generate_run_dir_name()
     )
     os.makedirs(directory_to_save_models, exist_ok=True)
 
@@ -107,7 +177,7 @@ def create_new_trained_models(run_with_smoothing: bool):
         # Read in features & apply Savitzky–Golay smoothing
         X_features, y_labels = create_and_train_model.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
                                                                                  c.CLASSES,
-                                                                                 target_len=100,
+                                                                                 target_len=50,
                                                                                  use_savgol=True,
                                                                                  savgol_window=9,
                                                                                  savgol_poly=3,
@@ -117,7 +187,7 @@ def create_new_trained_models(run_with_smoothing: bool):
         # Read features in from file
         X_features, y_labels = create_and_train_model.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
                                                                                  c.CLASSES,
-                                                                                 target_len=100,
+                                                                                 target_len=50,
                                                                                  add_stat_features = False)
 
     Xtrain, Xtest, ytrain, ytest = split_test_train_reformat(X_features, y_labels)
@@ -153,7 +223,7 @@ def create_new_trained_models(run_with_smoothing: bool):
                         epochs=200,
                         batch_size=4,
                         callbacks=[
-                            keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)
+                            keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
                         ]
                         )
 
@@ -164,7 +234,10 @@ def create_new_trained_models(run_with_smoothing: bool):
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     plt.legend()
-    plt.show()
+
+    roc_plot_filepath = os.path.join(directory_to_save_models, "training_history.png")
+    plt.savefig(roc_plot_filepath)
+    plt.close()
 
     test_loss, test_acc = model.evaluate(Xtest, ytest, verbose=1)
 
@@ -173,7 +246,7 @@ def create_new_trained_models(run_with_smoothing: bool):
                                    ytrain,
                                    ytest,
                                    model,
-                                   directory = "/trained_models/tensorflow/",
+                                   directory = directory_to_save_models,
                                    classes = c.CLASSES)
 
     print(f"\nFinal Test Accuracy: {test_acc:.2%}")
