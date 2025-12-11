@@ -116,7 +116,7 @@ def read_and_resample_features(file_root: str,
                                use_savgol: bool = False,
                                savgol_window: int = 9,
                                savgol_poly: int = 3,
-                               add_stat_features: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+                               add_stat_features: bool = True) -> Tuple[np.ndarray, np.ndarray]:
 
     X_features = []  # list of all feature arrays
     y_labels = [] # list of corresponding labels
@@ -640,27 +640,6 @@ def create_new_trained_models(run_k_fold_validation: bool,
                                   report_directory=directory_to_save_models,
                                   optional_annotation=optional_annotation)
 
-    #
-    # for X_index in range(0,len(X_features)):
-    #     # if y_labels[X_index] == 0:
-    #     #     plt.plot(range(0, 50), X_features[X_index], 'b')
-    #     if y_labels[X_index] == 1:
-    #         plt.plot(range(0, 50), X_features[X_index], 'r')
-    #         break
-    #     # if y_labels[X_index] == 2:
-    #     #     plt.plot(range(0, 50), X_features[X_index], 'g')
-    #     #     break
-    #     # if y_labels[X_index] == 3:
-    #     #     plt.plot(range(0, 50), X_features[X_index], 'm')
-    #
-    # plt.xlabel("Resampled time step (0–49)")
-    # plt.ylabel("Vertical acceleration $a_z$ (m/s²)")
-    # if optional_annotation:
-    #     plt.title(f"Example Vertical Accelerometer Signal for Regular Road\n{optional_annotation}")
-    # else:
-    #     plt.title(f"Example Vertical Accelerometer Signal for Regular Road")
-    #
-    # plt.show()
 
 
 if __name__ == "__main__":
