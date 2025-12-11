@@ -12,7 +12,7 @@ Per-class AUC (one-vs-rest):
   asphalt_bumps: 0.997
   metal_bumps: 0.924
 
-Classification Report:
+Random Forest Classification Report:
                precision    recall  f1-score   support
 
 worn_out_road       0.67      0.53      0.59        30

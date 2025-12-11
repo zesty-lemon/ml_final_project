@@ -664,17 +664,10 @@ def create_new_trained_models(run_k_fold_validation: bool,
 
 
 if __name__ == "__main__":
-    # Run with Savitzky–Golay Smoothing
+
+    # # Run with Savitzky–Golay Smoothing
     create_new_trained_models(run_k_fold_validation=True,
                               run_new_simple_rf_classifier=True,
                               run_random_param_search=True,
                               run_logistic_regression=True,
                               run_with_smoothing=True)
-
-    # # Run with Savitzky–Golay Smoothing
-    # create_new_trained_models(run_k_fold_validation=False,
-    #                           run_new_simple_rf_classifier=False,
-    #                           run_random_param_search=False,
-    #                           run_logistic_regression=False,
-    #                           run_with_smoothing=False)
-

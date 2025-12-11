@@ -204,3 +204,4 @@ coverage/
 # trained models
 
 trained_models/random_forest/sandbox/
+trained_models/1d_cnn/sandbox/

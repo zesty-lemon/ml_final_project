@@ -3,6 +3,7 @@ from typing import Tuple, Dict
 
 import numpy as np
 import pandas as pd
+from keras.src.optimizers import AdamW, SGD
 from matplotlib import pyplot as plt
 from sklearn.metrics import roc_curve, auc, accuracy_score, classification_report, confusion_matrix, \
     ConfusionMatrixDisplay
@@ -10,7 +11,7 @@ from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
 
 from sklearn.preprocessing import label_binarize
 
-import create_and_train_model
+import create_train_random_forest_logreg
 import constants as c
 import tensorflow as tf
 from tensorflow import keras
@@ -125,7 +126,7 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
     conf_matrix = confusion_matrix(ytest, y_test_pred, labels=label_ids)
 
     # Make labels pretty
-    display_names = [create_and_train_model.pretty_label(classes[l]) for l in label_ids]
+    display_names = [create_train_random_forest_logreg.pretty_label(classes[l]) for l in label_ids]
 
     disp = ConfusionMatrixDisplay(
         confusion_matrix=conf_matrix,
@@ -168,24 +169,24 @@ def generate_model_analysis_report(Xtrain: np.ndarray,
 def create_new_trained_models(run_with_smoothing: bool):
     # Get the parent directory to persist trained models and reports
     directory_to_save_models = (
-            "trained_models/1d_cnn/sandbox/" + create_and_train_model.generate_run_dir_name()
+            "trained_models/1d_cnn/sandbox/" + create_train_random_forest_logreg.generate_run_dir_name()
     )
     os.makedirs(directory_to_save_models, exist_ok=True)
 
     optional_annotation = ""
     if run_with_smoothing:
         # Read in features & apply Savitzky–Golay smoothing
-        X_features, y_labels = create_and_train_model.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
+        X_features, y_labels = create_train_random_forest_logreg.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
                                                                                  c.CLASSES,
                                                                                  target_len=50,
                                                                                  use_savgol=True,
                                                                                  savgol_window=9,
                                                                                  savgol_poly=3,
-                                                                                 add_stat_features = False)
+                                                                                 add_stat_features = True)
         optional_annotation = "With Savitzky–Golay Smoothing"
     else:
         # Read features in from file
-        X_features, y_labels = create_and_train_model.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
+        X_features, y_labels = create_train_random_forest_logreg.read_and_resample_features(c.DATA_SOURCE_DIRECTORY,
                                                                                  c.CLASSES,
                                                                                  target_len=50,
                                                                                  add_stat_features = False)
@@ -198,33 +199,72 @@ def create_new_trained_models(run_with_smoothing: bool):
     model = keras.Sequential([
         layers.Input(shape=(n_timesteps, n_features)),
 
-        layers.Conv1D(64, 5, padding="same", activation="relu"),
-        layers.Conv1D(64, 5, padding="same", activation="relu"),
-        layers.MaxPooling1D(2),
+        layers.Conv1D(
+            filters=64,
+            kernel_size=7,
+            padding="same",
+            activation="relu"
+        ),
+        layers.Conv1D(
+            filters=64,
+            kernel_size=5,
+            padding="same",
+            activation="relu"
+        ),
+        layers.MaxPooling1D(
+            pool_size=2
+        ),
 
-        layers.Conv1D(128, 3, padding="same", activation="relu"),
+        layers.Conv1D(
+            filters=128,
+            kernel_size=3,
+            padding="same",
+            activation="relu"
+        ),
+        layers.Conv1D(
+            filters=128,
+            kernel_size=3,
+            padding="same",
+            activation="relu"
+        ),
         layers.GlobalAveragePooling1D(),
 
-        layers.Dense(64, activation="relu"),
-        layers.Dropout(0.5),
-        layers.Dense(n_classes, activation="softmax"),
+        layers.Dense(
+            units=64,
+            activation="relu"
+        ),
+        layers.Dropout(
+            rate=0.5
+        ),
+        layers.Dense(
+            units=n_classes,
+            activation="softmax"
+        ),
     ])
 
+    optimizer = keras.optimizers.Adam(learning_rate=0.001)
+
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=optimizer,
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy']
     )
 
     model.summary()
 
+    early = keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=12,
+        min_delta=0.0005,
+        restore_best_weights=True,
+        verbose=1
+    )
+
     history = model.fit(Xtrain, ytrain,
                         validation_data=(Xtest, ytest),
                         epochs=200,
-                        batch_size=4,
-                        callbacks=[
-                            keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
-                        ]
+                        batch_size=16,# bigger = higher accuracy but overfitting potential
+                        callbacks=[early]
                         )
 
     plt.figure(figsize=(12, 5))
@@ -252,6 +292,6 @@ def create_new_trained_models(run_with_smoothing: bool):
     print(f"\nFinal Test Accuracy: {test_acc:.2%}")
 
 if __name__ == "__main__":
-    create_new_trained_models(run_with_smoothing=True)
+    create_new_trained_models(run_with_smoothing=False)
 
-#Todo: Move generate run dir name to util class.
+    create_new_trained_models(run_with_smoothing=True)
